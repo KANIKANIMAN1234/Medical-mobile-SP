@@ -23,9 +23,9 @@ export default function CheckupTrendsPage() {
 
   const chartData = trends
     ?.map((t) => {
-      const hc = t.health_checkup as { checkup_date: string };
+      const hc = (Array.isArray(t.health_checkup) ? t.health_checkup[0] : t.health_checkup) as { checkup_date: string } | null;
       return {
-        date: hc.checkup_date?.slice(0, 7) ?? '',
+        date: hc?.checkup_date?.slice(0, 7) ?? '',
         value: t.value,
         judgment: t.judgment,
       };
