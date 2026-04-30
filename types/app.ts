@@ -31,6 +31,7 @@ export interface Member {
   id: string;
   organization_id: string;
   name: string;
+  relationship?: string;
   birth_date?: string;
   gender?: 'male' | 'female' | 'other';
   blood_type?: string;
