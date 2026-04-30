@@ -68,7 +68,7 @@ export default function CheckupTrendsPage() {
                       <XAxis dataKey="date" tick={{ fontSize: 10 }} />
                       <YAxis tick={{ fontSize: 10 }} />
                       <Tooltip
-                        formatter={(v: number) => [v, selectedItem]}
+                        formatter={(v) => [v ?? '-', selectedItem]}
                         labelStyle={{ fontSize: 11 }}
                         contentStyle={{ fontSize: 12 }}
                       />
