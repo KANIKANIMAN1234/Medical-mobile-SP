@@ -321,7 +321,6 @@ export function useCheckups() {
         .from('t_health_checkups')
         .select('*, member:m_members(id,name), checkup_items:t_checkup_items(*)')
         .eq('organization_id', orgId!)
-        .is('deleted_at', null)
         .order('checkup_date', { ascending: false });
 
       if (selectedMemberId) query = query.eq('member_id', selectedMemberId);
@@ -472,7 +471,7 @@ export function useDashboard() {
 
       let checkupQ = supabase.from('t_health_checkups')
         .select('*, checkup_items:t_checkup_items(*), member:m_members(name)')
-        .eq('organization_id', orgId!).is('deleted_at', null)
+        .eq('organization_id', orgId!)
         .order('checkup_date', { ascending: false }).limit(1);
       if (selectedMemberId) checkupQ = checkupQ.eq('member_id', selectedMemberId);
 
