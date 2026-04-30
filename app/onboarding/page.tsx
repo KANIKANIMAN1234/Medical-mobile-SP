@@ -24,16 +24,20 @@ export default function OnboardingPage() {
     setLoading(true);
     setError('');
     try {
+      // Zustand のキャッシュではなく現在の認証ユーザーIDを使用
+      const { data: { user: authUser }, error: authErr } = await supabase.auth.getUser();
+      if (authErr || !authUser) throw new Error('認証情報が見つかりません。再ログインしてください。');
+
       const { data: org, error: orgError } = await supabase
         .from('m_organizations')
-        .insert({ name: orgName.trim(), plan: 'trial', created_by: user!.id })
+        .insert({ name: orgName.trim(), plan: 'trial', created_by: authUser.id })
         .select()
         .single();
       if (orgError) throw orgError;
 
       await supabase.from('m_organization_users').insert({
         organization_id: org.id,
-        user_id: user!.id,
+        user_id: authUser.id,
         role: 'owner',
       });
 
