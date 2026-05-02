@@ -318,7 +318,8 @@ export function useExpenses(year?: number) {
       return data as MedicalExpense[];
     },
     enabled: !!orgId,
-    staleTime: 1000 * 60,
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 }
 
@@ -337,9 +338,9 @@ export function useCreateExpense() {
       if (error) throw error;
       return result;
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['expenses'] });
-      qc.invalidateQueries({ queryKey: ['dashboard'] });
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['expenses'] });
+      await qc.invalidateQueries({ queryKey: ['dashboard'] });
     },
   });
 }

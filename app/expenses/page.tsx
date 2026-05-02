@@ -10,15 +10,22 @@ import type { MedicalExpense } from '@/types/app';
 
 const EXPENSE_LABEL = { hospital: '病院', pharmacy: '薬局', other: 'その他' };
 
+/** API 由来で文字列になることがあるため集計は必ず数値化 */
+function expenseYen(e: MedicalExpense): number {
+  const n = Number(e.total_amount);
+  return Number.isFinite(n) ? n : 0;
+}
+
 function groupByMonth(expenses: MedicalExpense[] | undefined) {
   if (!expenses) return [];
   const groups: { key: string; label: string; total: number; items: MedicalExpense[] }[] = [];
   for (const e of expenses) {
     const key = e.expense_date.slice(0, 7);
     const label = format(parseISO(e.expense_date.slice(0, 7) + '-01'), 'yyyy年M月', { locale: ja });
+    const yen = expenseYen(e);
     const g = groups.find((g) => g.key === key);
-    if (g) { g.items.push(e); g.total += e.total_amount; }
-    else { groups.push({ key, label, total: e.total_amount, items: [e] }); }
+    if (g) { g.items.push(e); g.total += yen; }
+    else { groups.push({ key, label, total: yen, items: [e] }); }
   }
   return groups;
 }
@@ -27,8 +34,9 @@ export default function ExpensesPage() {
   const [year, setYear] = useState(new Date().getFullYear());
   const { data: expenses, isLoading } = useExpenses(year);
   const groups = groupByMonth(expenses);
-  const yearTotal = expenses?.reduce((s, e) => s + e.total_amount, 0) ?? 0;
-  const deductibleTotal = expenses?.filter((e) => e.is_deductible).reduce((s, e) => s + e.total_amount, 0) ?? 0;
+  const yearTotal = expenses?.reduce((s, e) => s + expenseYen(e), 0) ?? 0;
+  const deductibleTotal =
+    expenses?.filter((e) => e.is_deductible === true).reduce((s, e) => s + expenseYen(e), 0) ?? 0;
 
   return (
     <div className="min-h-screen pb-20 bg-gray-50">
@@ -71,6 +79,9 @@ export default function ExpensesPage() {
             <Link href="/expenses/new" className="inline-block mt-4 bg-indigo-600 text-white px-6 py-3 rounded-xl text-sm font-medium">
               最初の記録を追加
             </Link>
+            <p className="text-xs text-gray-400 mt-4 max-w-sm mx-auto leading-relaxed">
+              登録直後でここが空のときは、領収書の支払日の年と、上の「◯◯年」が一致しているか確認してください。
+            </p>
           </div>
         ) : (
           <div className="space-y-4">
@@ -99,7 +110,7 @@ export default function ExpensesPage() {
                           <p className="font-medium text-gray-900 text-sm truncate">{e.facility_name}</p>
                           {e.member && <p className="text-xs text-gray-400">{e.member.name}</p>}
                         </div>
-                        <p className="font-bold text-gray-900 ml-3">¥{e.total_amount.toLocaleString()}</p>
+                        <p className="font-bold text-gray-900 ml-3">¥{expenseYen(e).toLocaleString()}</p>
                       </div>
                     </div>
                   ))}
