@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { useMedications, useCreateMedication, useDeleteMedication, useMembers } from '@/hooks/useData';
 import { useAppStore } from '@/stores/appStore';
 import BottomNav from '@/components/BottomNav';
@@ -8,14 +8,42 @@ import { createClient } from '@/lib/supabase';
 
 type Tab = 'active' | 'ended';
 
+const SLOT_COUNT = 3 as const;
+
+type MedRow = {
+  drug_name: string;
+  dosage: string;
+  frequency: string;
+  days_supply: string;
+  purpose: string;
+  is_ongoing: boolean;
+};
+
+function emptyRow(): MedRow {
+  return {
+    drug_name: '',
+    dosage: '',
+    frequency: '',
+    days_supply: '',
+    purpose: '',
+    is_ongoing: false,
+  };
+}
+
+function initialRows(): MedRow[] {
+  return Array.from({ length: SLOT_COUNT }, emptyRow);
+}
+
 /** Edge Function ocr-medication のHTTPボディ */
 type OcrMedicationResponse = {
   data: {
-    drug_name?: string;
-    dosage?: string;
-    frequency?: string;
-    days_supply?: number | null;
-    purpose?: string;
+    items?: Array<{
+      drug_name?: string;
+      dosage?: string;
+      frequency?: string;
+      days_supply?: number | null;
+      purpose?: string;
+    }>;
     prescribed_date?: string | null;
     ocr_raw_text?: string;
   } | null;
@@ -52,18 +80,18 @@ export default function MedicationsPage() {
   const displayMeds = tab === 'active' ? activeMeds : endedMeds;
 
   const { user, currentOrganization } = useAppStore();
-  const [form, setForm] = useState({
-    member_id: selectedMemberId ?? members?.[0]?.id ?? '',
-    drug_name: '',
-    dosage: '',
-    frequency: '',
-    prescribed_date: today,
-    days_supply: '',
-    is_ongoing: false,
-    purpose: '',
-  });
+  const [memberId, setMemberId] = useState('');
+  const [prescribedDate, setPrescribedDate] = useState(today);
+  const [rows, setRows] = useState<MedRow[]>(initialRows);
 
-  // 画像をBase64に変換
+  const updateRow = useCallback((index: number, patch: Partial<MedRow>) => {
+    setRows((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], ...patch };
+      return next;
+    });
+  }, []);
+
   const toBase64 = (file: File): Promise<string> =>
     new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -75,7 +103,6 @@ export default function MedicationsPage() {
       reader.readAsDataURL(file);
     });
 
-  // 写真アップロード→OCR処理
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -96,27 +123,36 @@ export default function MedicationsPage() {
       const ocr = payload?.data;
       if (!ocr) throw new Error('レスポンスにデータがありません');
 
+      const items = ocr.items ?? [];
       const dateNorm = toDateInputValue(ocr.prescribed_date);
-      setForm((f) => ({
-        ...f,
-        drug_name: ocr.drug_name?.trim() || f.drug_name,
-        dosage: ocr.dosage?.trim() || f.dosage,
-        frequency: ocr.frequency?.trim() || f.frequency,
-        prescribed_date: dateNorm ?? f.prescribed_date,
-        days_supply:
-          ocr.days_supply != null && Number.isFinite(Number(ocr.days_supply))
-            ? String(Number(ocr.days_supply))
-            : f.days_supply,
-        purpose: ocr.purpose?.trim() || f.purpose,
-      }));
+      if (dateNorm) setPrescribedDate(dateNorm);
 
-      const hasStructured = !!(
-        ocr.drug_name?.trim() ||
-        ocr.dosage?.trim() ||
-        ocr.frequency?.trim() ||
-        ocr.purpose?.trim() ||
-        dateNorm ||
-        (ocr.days_supply != null && Number.isFinite(Number(ocr.days_supply)))
+      setRows((prev) => {
+        const next = prev.map((r) => ({ ...r }));
+        for (let i = 0; i < SLOT_COUNT && i < items.length; i++) {
+          const it = items[i];
+          next[i] = {
+            ...next[i],
+            drug_name: it.drug_name?.trim() || next[i].drug_name,
+            dosage: it.dosage?.trim() || next[i].dosage,
+            frequency: it.frequency?.trim() || next[i].frequency,
+            days_supply:
+              it.days_supply != null && Number.isFinite(Number(it.days_supply))
+                ? String(Number(it.days_supply))
+                : next[i].days_supply,
+            purpose: it.purpose?.trim() || next[i].purpose,
+          };
+        }
+        return next;
+      });
+
+      const hasStructured = items.some(
+        (it) =>
+          it.drug_name?.trim() ||
+          it.dosage?.trim() ||
+          it.frequency?.trim() ||
+          it.purpose?.trim() ||
+          (it.days_supply != null && Number.isFinite(Number(it.days_supply)))
       );
       const rawLen = (ocr.ocr_raw_text ?? '').trim().length;
       if (!hasStructured && rawLen === 0) {
@@ -135,22 +171,36 @@ export default function MedicationsPage() {
     }
   };
 
+  const filledRowCount = rows.filter((r) => r.drug_name.trim()).length;
+
   const handleSave = async () => {
-    if (!form.drug_name || !form.member_id) return;
+    if (!memberId || filledRowCount === 0) return;
     setSaving(true);
     try {
-      await createMed.mutateAsync({
-        ...form,
-        days_supply: form.days_supply ? Number(form.days_supply) : undefined,
-        end_date: form.days_supply && !form.is_ongoing
-          ? new Date(new Date(form.prescribed_date).getTime() + Number(form.days_supply) * 86400000)
-              .toISOString().split('T')[0]
-          : undefined,
-      });
+      for (const row of rows) {
+        if (!row.drug_name.trim()) continue;
+        const ds = row.days_supply ? Number(row.days_supply) : undefined;
+        await createMed.mutateAsync({
+          member_id: memberId,
+          drug_name: row.drug_name.trim(),
+          dosage: row.dosage || undefined,
+          frequency: row.frequency || undefined,
+          prescribed_date: prescribedDate,
+          days_supply: ds,
+          end_date:
+            ds && !row.is_ongoing
+              ? new Date(new Date(prescribedDate).getTime() + ds * 86400000).toISOString().split('T')[0]
+              : undefined,
+          purpose: row.purpose || undefined,
+          is_ongoing: row.is_ongoing,
+        });
+      }
       setShowForm(false);
       setOcrPreview(null);
       setOcrHint(null);
-      setForm({ member_id: selectedMemberId ?? '', drug_name: '', dosage: '', frequency: '', prescribed_date: today, days_supply: '', is_ongoing: false, purpose: '' });
+      setRows(initialRows());
+      setPrescribedDate(today);
+      setMemberId('');
     } catch { /* noop */ }
     setSaving(false);
   };
@@ -158,7 +208,9 @@ export default function MedicationsPage() {
   const handleOpenForm = () => {
     setOcrPreview(null);
     setOcrHint(null);
-    setForm({ member_id: selectedMemberId ?? members?.[0]?.id ?? '', drug_name: '', dosage: '', frequency: '', prescribed_date: today, days_supply: '', is_ongoing: false, purpose: '' });
+    setRows(initialRows());
+    setPrescribedDate(today);
+    setMemberId(selectedMemberId ?? members?.[0]?.id ?? '');
     setShowForm(true);
   };
 
@@ -176,7 +228,6 @@ export default function MedicationsPage() {
         </button>
       </header>
 
-      {/* タブ */}
       <div className="flex bg-white border-b border-gray-200">
         {(['active', 'ended'] as Tab[]).map((t) => (
           <button
@@ -237,30 +288,36 @@ export default function MedicationsPage() {
         )}
       </div>
 
-      {/* 追加フォーム (ボトムシート) */}
       {showForm && (
         <div className="fixed inset-0 z-[60] flex items-end bg-black/50">
           <div className="w-full bg-white rounded-t-3xl p-6 max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-base font-bold text-gray-900">お薬を追加</h2>
+              <h2 className="text-base font-bold text-gray-900">お薬を追加（最大{SLOT_COUNT}件）</h2>
               <button onClick={() => setShowForm(false)} className="text-gray-400 text-lg">✕</button>
             </div>
-            <div className="space-y-3">
+            <p className="text-xs text-gray-500 mb-3">薬品名が入っている行だけ保存されます。写真は1枚で複数薬を読み取ると自動で振り分けます。</p>
+            <div className="space-y-4">
 
-              {/* 受診者 */}
               <div>
                 <label className="text-xs font-medium text-gray-600 mb-1 block">受診者 *</label>
-                <select value={form.member_id} onChange={(e) => setForm({ ...form, member_id: e.target.value })} className={inputCls}>
+                <select value={memberId} onChange={(e) => setMemberId(e.target.value)} className={inputCls}>
                   <option value="">選択</option>
                   {members?.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
                 </select>
               </div>
 
-              {/* OCR写真アップロード */}
-              <div className="border-2 border-dashed border-indigo-100 rounded-2xl p-4 bg-indigo-50/40">
-                <p className="text-xs font-medium text-indigo-700 mb-2">📷 薬袋・処方箋・説明書の写真から自動入力</p>
+              <div>
+                <label className="text-xs font-medium text-gray-600 mb-1 block">処方日（共通）</label>
+                <input
+                  type="date"
+                  value={prescribedDate}
+                  onChange={(e) => setPrescribedDate(e.target.value)}
+                  className={inputCls}
+                />
+              </div>
 
-                {/* プレビュー */}
+              <div className="border-2 border-dashed border-indigo-100 rounded-2xl p-4 bg-indigo-50/40">
+                <p className="text-xs font-medium text-indigo-700 mb-2">📷 写真から自動入力（最大{SLOT_COUNT}件に分配）</p>
                 {ocrPreview && (
                   <div className="mb-3 relative rounded-xl overflow-hidden">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -273,7 +330,6 @@ export default function MedicationsPage() {
                     )}
                   </div>
                 )}
-
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -287,7 +343,7 @@ export default function MedicationsPage() {
                   disabled={ocrLoading}
                   className="w-full flex items-center justify-center gap-2 py-3 border border-indigo-200 rounded-xl text-sm text-indigo-600 bg-white font-medium active:bg-indigo-50 disabled:opacity-50"
                 >
-                  📷 {ocrPreview ? '別の写真を撮影・選択' : 'カメラ・アルバムから選択'}
+                  📷 {ocrPreview ? '別の写真を選択' : 'カメラ・アルバムから選択'}
                 </button>
                 {ocrPreview && !ocrLoading && !ocrHint && (
                   <p className="text-xs text-green-600 text-center mt-2 font-medium">✓ 読み取り完了。内容を確認のうえ保存してください。</p>
@@ -297,68 +353,84 @@ export default function MedicationsPage() {
                 )}
               </div>
 
-              {/* 薬品名 */}
-              <div>
-                <label className="text-xs font-medium text-gray-600 mb-1 block">薬品名 *</label>
-                <input type="text" value={form.drug_name} onChange={(e) => setForm({ ...form, drug_name: e.target.value })}
-                  placeholder="例: アムロジピン錠5mg" className={inputCls} />
-              </div>
-
-              {/* 用量・用法 */}
-              <div>
-                <label className="text-xs font-medium text-gray-600 mb-1 block">用量・用法</label>
-                <input type="text" value={form.dosage} onChange={(e) => setForm({ ...form, dosage: e.target.value })}
-                  placeholder="例: 1錠 毎朝" className={inputCls} />
-              </div>
-
-              {/* 服用頻度 */}
-              <div>
-                <label className="text-xs font-medium text-gray-600 mb-1 block">服用頻度</label>
-                <input type="text" value={form.frequency} onChange={(e) => setForm({ ...form, frequency: e.target.value })}
-                  placeholder="例: 毎食後" className={inputCls} />
-              </div>
-
-              {/* 処方日 */}
-              <div>
-                <label className="text-xs font-medium text-gray-600 mb-1 block">処方日</label>
-                <input type="date" value={form.prescribed_date} onChange={(e) => setForm({ ...form, prescribed_date: e.target.value })} className={inputCls} />
-              </div>
-
-              {/* 日数 */}
-              <div>
-                <label className="text-xs font-medium text-gray-600 mb-1 block">日数</label>
-                <input type="number" value={form.days_supply} onChange={(e) => setForm({ ...form, days_supply: e.target.value })}
-                  placeholder="例: 30" className={inputCls} min={1} />
-              </div>
-
-              {/* 用途 */}
-              <div>
-                <label className="text-xs font-medium text-gray-600 mb-1 block">用途・効能</label>
-                <input type="text" value={form.purpose} onChange={(e) => setForm({ ...form, purpose: e.target.value })}
-                  placeholder="例: 高血圧、花粉症" className={inputCls} />
-              </div>
-
-              {/* 常用薬チェック */}
-              <label className="flex items-center gap-3">
-                <input type="checkbox" checked={form.is_ongoing}
-                  onChange={(e) => setForm({ ...form, is_ongoing: e.target.checked })}
-                  className="w-5 h-5 accent-indigo-600" />
-                <span className="text-sm text-gray-700">常用薬（終了日なし）</span>
-              </label>
+              {rows.map((row, idx) => (
+                <div key={idx} className="rounded-2xl border border-gray-200 bg-gray-50/80 p-4 space-y-3">
+                  <p className="text-xs font-bold text-gray-700">お薬 {idx + 1}</p>
+                  <div>
+                    <label className="text-xs font-medium text-gray-600 mb-1 block">薬品名 {idx === 0 ? '*' : ''}</label>
+                    <input
+                      type="text"
+                      value={row.drug_name}
+                      onChange={(e) => updateRow(idx, { drug_name: e.target.value })}
+                      placeholder="例: アムロジピン錠5mg"
+                      className={inputCls}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-600 mb-1 block">用量・用法</label>
+                    <input
+                      type="text"
+                      value={row.dosage}
+                      onChange={(e) => updateRow(idx, { dosage: e.target.value })}
+                      placeholder="例: 1錠 毎朝"
+                      className={inputCls}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-600 mb-1 block">服用頻度</label>
+                    <input
+                      type="text"
+                      value={row.frequency}
+                      onChange={(e) => updateRow(idx, { frequency: e.target.value })}
+                      placeholder="例: 毎食後"
+                      className={inputCls}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-600 mb-1 block">日数</label>
+                    <input
+                      type="number"
+                      value={row.days_supply}
+                      onChange={(e) => updateRow(idx, { days_supply: e.target.value })}
+                      placeholder="例: 30"
+                      className={inputCls}
+                      min={1}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-600 mb-1 block">用途・効能</label>
+                    <input
+                      type="text"
+                      value={row.purpose}
+                      onChange={(e) => updateRow(idx, { purpose: e.target.value })}
+                      placeholder="例: 高血圧"
+                      className={inputCls}
+                    />
+                  </div>
+                  <label className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={row.is_ongoing}
+                      onChange={(e) => updateRow(idx, { is_ongoing: e.target.checked })}
+                      className="w-5 h-5 accent-indigo-600"
+                    />
+                    <span className="text-sm text-gray-700">常用薬（終了日なし）</span>
+                  </label>
+                </div>
+              ))}
 
               <button
                 onClick={handleSave}
-                disabled={!form.drug_name || !form.member_id || saving || ocrLoading}
-                className="w-full bg-indigo-600 disabled:bg-indigo-300 text-white font-bold py-4 rounded-xl text-sm mt-2"
+                disabled={!memberId || filledRowCount === 0 || saving || ocrLoading}
+                className="w-full bg-indigo-600 disabled:bg-indigo-300 text-white font-bold py-4 rounded-xl text-sm"
               >
-                {saving ? '保存中...' : '保存する'}
+                {saving ? '保存中...' : filledRowCount > 1 ? `${filledRowCount}件をまとめて保存` : '保存する'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* 削除確認 */}
       {deletingId && (
         <div className="fixed inset-0 z-[60] flex items-end bg-black/50">
           <div className="w-full bg-white rounded-t-3xl p-6 space-y-3">
