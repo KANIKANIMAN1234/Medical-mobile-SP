@@ -8,6 +8,27 @@ import { createClient } from '@/lib/supabase';
 
 type Tab = 'active' | 'ended';
 
+/** Edge Function ocr-medication のHTTPボディ */
+type OcrMedicationResponse = {
+  data: {
+    drug_name?: string;
+    dosage?: string;
+    frequency?: string;
+    days_supply?: number | null;
+    purpose?: string;
+    prescribed_date?: string | null;
+    ocr_raw_text?: string;
+  } | null;
+  error: string | null;
+};
+
+function toDateInputValue(v: string | null | undefined): string | undefined {
+  if (!v) return undefined;
+  const m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  return undefined;
+}
+
 export default function MedicationsPage() {
   const { selectedMemberId } = useAppStore();
   const { data: allMeds, isLoading } = useMedications(false);
@@ -22,6 +43,7 @@ export default function MedicationsPage() {
   const [saving, setSaving] = useState(false);
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrPreview, setOcrPreview] = useState<string | null>(null);
+  const [ocrHint, setOcrHint] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const today = new Date().toISOString().split('T')[0];
@@ -60,30 +82,56 @@ export default function MedicationsPage() {
 
     setOcrPreview(URL.createObjectURL(file));
     setOcrLoading(true);
+    setOcrHint(null);
 
     try {
       const base64 = await toBase64(file);
-      const { data, error } = await supabase.functions.invoke('ocr-medication', {
+      const { data: raw, error } = await supabase.functions.invoke<OcrMedicationResponse>('ocr-medication', {
         body: { image_base64: base64 },
       });
       if (error) throw error;
 
-      if (data) {
-        setForm((f) => ({
-          ...f,
-          drug_name: data.drug_name || f.drug_name,
-          dosage: data.dosage || f.dosage,
-          frequency: data.frequency || f.frequency,
-          prescribed_date: data.prescribed_date || f.prescribed_date,
-          days_supply: data.days_supply ? String(data.days_supply) : f.days_supply,
-          purpose: data.purpose || f.purpose,
-        }));
+      const payload = raw as OcrMedicationResponse | null;
+      if (payload?.error) throw new Error(payload.error);
+      const ocr = payload?.data;
+      if (!ocr) throw new Error('レスポンスにデータがありません');
+
+      const dateNorm = toDateInputValue(ocr.prescribed_date);
+      setForm((f) => ({
+        ...f,
+        drug_name: ocr.drug_name?.trim() || f.drug_name,
+        dosage: ocr.dosage?.trim() || f.dosage,
+        frequency: ocr.frequency?.trim() || f.frequency,
+        prescribed_date: dateNorm ?? f.prescribed_date,
+        days_supply:
+          ocr.days_supply != null && Number.isFinite(Number(ocr.days_supply))
+            ? String(Number(ocr.days_supply))
+            : f.days_supply,
+        purpose: ocr.purpose?.trim() || f.purpose,
+      }));
+
+      const hasStructured = !!(
+        ocr.drug_name?.trim() ||
+        ocr.dosage?.trim() ||
+        ocr.frequency?.trim() ||
+        ocr.purpose?.trim() ||
+        dateNorm ||
+        (ocr.days_supply != null && Number.isFinite(Number(ocr.days_supply)))
+      );
+      const rawLen = (ocr.ocr_raw_text ?? '').trim().length;
+      if (!hasStructured && rawLen === 0) {
+        setOcrHint('画像から文字を検出できませんでした。明るい場所で撮り直すか手入力してください。');
+      } else if (!hasStructured && rawLen > 0) {
+        setOcrHint('文字は読み取りましたが薬情報を特定できませんでした。手入力で補完してください。');
+      } else {
+        setOcrHint(null);
       }
     } catch (err) {
       console.error('OCR failed:', err);
-      alert('OCR処理に失敗しました。手動で入力してください。');
+      alert(`OCR処理に失敗しました。手動で入力してください。\n${err instanceof Error ? err.message : ''}`);
     } finally {
       setOcrLoading(false);
+      if (e.target) e.target.value = '';
     }
   };
 
@@ -101,6 +149,7 @@ export default function MedicationsPage() {
       });
       setShowForm(false);
       setOcrPreview(null);
+      setOcrHint(null);
       setForm({ member_id: selectedMemberId ?? '', drug_name: '', dosage: '', frequency: '', prescribed_date: today, days_supply: '', is_ongoing: false, purpose: '' });
     } catch { /* noop */ }
     setSaving(false);
@@ -108,6 +157,7 @@ export default function MedicationsPage() {
 
   const handleOpenForm = () => {
     setOcrPreview(null);
+    setOcrHint(null);
     setForm({ member_id: selectedMemberId ?? members?.[0]?.id ?? '', drug_name: '', dosage: '', frequency: '', prescribed_date: today, days_supply: '', is_ongoing: false, purpose: '' });
     setShowForm(true);
   };
@@ -239,8 +289,11 @@ export default function MedicationsPage() {
                 >
                   📷 {ocrPreview ? '別の写真を撮影・選択' : 'カメラ・アルバムから選択'}
                 </button>
-                {ocrPreview && !ocrLoading && (
-                  <p className="text-xs text-green-600 text-center mt-2 font-medium">✓ 読み取り完了。内容を確認してください。</p>
+                {ocrPreview && !ocrLoading && !ocrHint && (
+                  <p className="text-xs text-green-600 text-center mt-2 font-medium">✓ 読み取り完了。内容を確認のうえ保存してください。</p>
+                )}
+                {ocrPreview && !ocrLoading && ocrHint && (
+                  <p className="text-xs text-amber-700 text-center mt-2 font-medium">{ocrHint}</p>
                 )}
               </div>
 
