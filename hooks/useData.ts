@@ -298,14 +298,15 @@ export function useDeleteMedication() {
 // ───────── Expenses ─────────
 export function useExpenses(year?: number) {
   const supabase = createClient();
-  const { selectedMemberId, currentOrganization } = useAppStore();
+  const { currentOrganization } = useAppStore();
   const orgId = currentOrganization?.id;
   const targetYear = year ?? new Date().getFullYear();
 
+  // 医療費は家族単位で把握することが多いため、ダッシュボードの「表示中メンバー」で一覧を絞らない
   return useQuery({
-    queryKey: ['expenses', orgId, selectedMemberId, targetYear],
+    queryKey: ['expenses', orgId, targetYear],
     queryFn: async () => {
-      let query = supabase
+      const { data, error } = await supabase
         .from('t_medical_expenses')
         .select('*, member:m_members(id,name)')
         .eq('organization_id', orgId!)
@@ -313,9 +314,6 @@ export function useExpenses(year?: number) {
         .lte('expense_date', `${targetYear}-12-31`)
         .order('expense_date', { ascending: false });
 
-      if (selectedMemberId) query = query.eq('member_id', selectedMemberId);
-
-      const { data, error } = await query;
       if (error) throw error;
       return data as MedicalExpense[];
     },

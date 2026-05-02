@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useCreateExpense, useOcrReceipt, useMembers } from '@/hooks/useData';
 import { useAppStore } from '@/stores/appStore';
@@ -9,6 +9,14 @@ import type { OcrReceiptResult } from '@/types/app';
 import imageCompression from 'browser-image-compression';
 
 type Phase = 'capture' | 'confirm';
+
+/** カンマ付き・全角数字混じりでも保存用の整数円にする */
+function parseYenInput(raw: string): number {
+  const digits = String(raw).replace(/,/g, '').replace(/[^\d]/g, '');
+  if (!digits) return NaN;
+  const n = parseInt(digits, 10);
+  return Number.isFinite(n) ? n : NaN;
+}
 
 export default function NewExpensePage() {
   const router = useRouter();
@@ -33,6 +41,15 @@ export default function NewExpensePage() {
   const [isDeductible, setIsDeductible] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  // メンバー取得後に初期値を埋める（初回レンダー時は members 未ロードで id が空のままになりがち）
+  useEffect(() => {
+    if (!members?.length) return;
+    setMemberId((prev) => {
+      if (prev && members.some((m) => m.id === prev)) return prev;
+      return selectedMemberId ?? members[0].id;
+    });
+  }, [members, selectedMemberId]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -76,25 +93,41 @@ export default function NewExpensePage() {
   }, [memberId, ocrReceipt]);
 
   const handleSave = async () => {
-    if (!facilityName || !totalAmount || !memberId) return;
+    const amount = parseYenInput(totalAmount);
+    if (!facilityName.trim() || !expenseDate || !memberId) return;
+    if (!Number.isFinite(amount) || amount < 0) {
+      setError('金額を数字で入力してください');
+      return;
+    }
+    setError('');
     setSaving(true);
     try {
       await createExpense.mutateAsync({
         member_id: memberId,
-        facility_name: facilityName,
+        facility_name: facilityName.trim(),
         expense_date: expenseDate,
         expense_type: expenseType,
-        total_amount: Number(totalAmount),
+        total_amount: amount,
         is_deductible: isDeductible,
       });
       router.push('/expenses');
-    } catch {
+    } catch (e) {
+      console.error('createExpense', e);
       setError('保存に失敗しました');
       setSaving(false);
     }
   };
 
   const inputCls = 'w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white';
+
+  const parsedAmount = phase === 'confirm' ? parseYenInput(totalAmount) : NaN;
+  const canSubmitConfirm =
+    phase === 'confirm' &&
+    !!facilityName.trim() &&
+    !!expenseDate &&
+    !!memberId &&
+    Number.isFinite(parsedAmount) &&
+    parsedAmount >= 0;
 
   if (phase === 'capture') {
     return (
@@ -226,7 +259,7 @@ export default function NewExpensePage() {
             やり直し
           </button>
           <button onClick={handleSave}
-            disabled={!facilityName || !totalAmount || !expenseDate || saving}
+            disabled={!canSubmitConfirm || saving}
             className="flex-[2] bg-indigo-600 disabled:bg-indigo-300 text-white font-bold py-3.5 rounded-xl text-sm">
             {saving ? '保存中...' : '保存する'}
           </button>
