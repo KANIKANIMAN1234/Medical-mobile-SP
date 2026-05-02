@@ -101,6 +101,7 @@ export interface MedicalExpense {
   total_amount: number;
   insurance_amount?: number;
   receipt_image_url?: string;
+  gdrive_file_id?: string;
   is_deductible: boolean;
   notes?: string;
   created_at: string;
@@ -118,6 +119,7 @@ export interface HealthCheckup {
   checkup_type?: string;
   overall_judgment?: JudgmentLevel;
   image_urls?: string[];
+  gdrive_file_ids?: string[];
   notes?: string;
   created_at: string;
   member?: Member;

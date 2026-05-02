@@ -345,6 +345,41 @@ export function useCreateExpense() {
   });
 }
 
+/** Google Drive へ画像を保存（Edge Function `upload-image`）。 */
+export function useUploadImage() {
+  const supabase = createClient();
+  const { currentOrganization } = useAppStore();
+
+  return useMutation({
+    mutationFn: async ({
+      imageBase64,
+      folder,
+      memberId,
+    }: {
+      imageBase64: string;
+      folder: string;
+      memberId?: string;
+    }): Promise<{ url: string; fileId: string }> => {
+      const body: Record<string, unknown> = {
+        image_base64: imageBase64,
+        folder,
+      };
+      if (currentOrganization?.id) body.organization_id = currentOrganization.id;
+      if (memberId) body.member_id = memberId;
+
+      const { data, error } = await supabase.functions.invoke('upload-image', { body });
+      if (error) throw error;
+
+      const res = data as { url?: string; fileId?: string; error?: string } | null;
+      if (res && typeof res.error === 'string' && res.error) throw new Error(res.error);
+      if (!res?.url || !res?.fileId) {
+        throw new Error('アップロードの応答が不正です');
+      }
+      return { url: res.url, fileId: res.fileId };
+    },
+  });
+}
+
 export function useOcrReceipt() {
   const supabase = createClient();
   return useMutation({

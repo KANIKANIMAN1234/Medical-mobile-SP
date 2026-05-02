@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useCreateExpense, useOcrReceipt, useMembers } from '@/hooks/useData';
+import { useCreateExpense, useOcrReceipt, useMembers, useUploadImage } from '@/hooks/useData';
 import { useAppStore } from '@/stores/appStore';
 import BottomNav from '@/components/BottomNav';
 import type { OcrReceiptResult } from '@/types/app';
@@ -20,9 +20,10 @@ function parseYenInput(raw: string): number {
 
 export default function NewExpensePage() {
   const router = useRouter();
-  const { selectedMemberId } = useAppStore();
+  const { selectedMemberId, currentOrganization } = useAppStore();
   const { data: members } = useMembers();
   const createExpense = useCreateExpense();
+  const uploadImage = useUploadImage();
   const ocrReceipt = useOcrReceipt();
 
   const [phase, setPhase] = useState<Phase>('capture');
@@ -102,6 +103,17 @@ export default function NewExpensePage() {
     setError('');
     setSaving(true);
     try {
+      let receipt_image_url: string | undefined;
+      let gdrive_file_id: string | undefined;
+      if (imageBase64 && currentOrganization?.id) {
+        const uploaded = await uploadImage.mutateAsync({
+          imageBase64: imageBase64,
+          folder: 'receipts',
+          memberId: memberId,
+        });
+        receipt_image_url = uploaded.url;
+        gdrive_file_id = uploaded.fileId;
+      }
       await createExpense.mutateAsync({
         member_id: memberId,
         facility_name: facilityName.trim(),
@@ -109,6 +121,8 @@ export default function NewExpensePage() {
         expense_type: expenseType,
         total_amount: amount,
         is_deductible: isDeductible,
+        receipt_image_url,
+        gdrive_file_id,
       });
       router.push('/expenses');
     } catch (e) {
@@ -259,9 +273,9 @@ export default function NewExpensePage() {
             やり直し
           </button>
           <button onClick={handleSave}
-            disabled={!canSubmitConfirm || saving}
+            disabled={!canSubmitConfirm || saving || uploadImage.isPending}
             className="flex-[2] bg-indigo-600 disabled:bg-indigo-300 text-white font-bold py-3.5 rounded-xl text-sm">
-            {saving ? '保存中...' : '保存する'}
+            {saving || uploadImage.isPending ? '保存中...' : '保存する'}
           </button>
         </div>
       </div>

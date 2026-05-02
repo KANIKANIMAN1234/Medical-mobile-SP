@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { useCreateCheckup, useOcrCheckup, useMembers } from '@/hooks/useData';
+import { useCreateCheckup, useOcrCheckup, useMembers, useUploadImage } from '@/hooks/useData';
 import { useAppStore } from '@/stores/appStore';
 import BottomNav from '@/components/BottomNav';
 import type { OcrCheckupResult, CheckupItem, JudgmentLevel } from '@/types/app';
@@ -15,10 +15,11 @@ const JUDGMENT_COLOR: Record<string, string> = {
 
 export default function NewCheckupPage() {
   const router = useRouter();
-  const { selectedMemberId } = useAppStore();
+  const { selectedMemberId, currentOrganization } = useAppStore();
   const { data: members } = useMembers();
   const createCheckup = useCreateCheckup();
   const ocrCheckup = useOcrCheckup();
+  const uploadImage = useUploadImage();
 
   const [phase, setPhase] = useState<'input' | 'ocr' | 'confirm'>('input');
   const [memberId, setMemberId] = useState(selectedMemberId ?? members?.[0]?.id ?? '');
@@ -74,6 +75,19 @@ export default function NewCheckupPage() {
     if (!memberId || !checkupDate) return;
     setSaving(true);
     try {
+      const image_urls: string[] = [];
+      const gdrive_file_ids: string[] = [];
+      if (imageBase64List.length && currentOrganization?.id) {
+        for (const b64 of imageBase64List) {
+          const up = await uploadImage.mutateAsync({
+            imageBase64: b64,
+            folder: 'checkups',
+            memberId: memberId,
+          });
+          image_urls.push(up.url);
+          gdrive_file_ids.push(up.fileId);
+        }
+      }
       await createCheckup.mutateAsync({
         checkup: {
           member_id: memberId,
@@ -81,6 +95,7 @@ export default function NewCheckupPage() {
           checkup_type: checkupType || undefined,
           facility_name: facilityName || undefined,
           overall_judgment: (overallJudgment as JudgmentLevel) || undefined,
+          ...(image_urls.length ? { image_urls, gdrive_file_ids } : {}),
         },
         items: items.filter((i) => i.item_name) as CheckupItem[],
       });
@@ -170,9 +185,9 @@ export default function NewCheckupPage() {
             <button onClick={() => setPhase('input')} className="flex-1 border border-gray-200 text-gray-600 py-3.5 rounded-xl text-sm">
               やり直し
             </button>
-            <button onClick={handleSave} disabled={!memberId || saving}
+            <button onClick={handleSave} disabled={!memberId || saving || uploadImage.isPending}
               className="flex-[2] bg-indigo-600 disabled:bg-indigo-300 text-white font-bold py-3.5 rounded-xl text-sm">
-              {saving ? '保存中...' : '保存する'}
+              {saving || uploadImage.isPending ? '保存中...' : '保存する'}
             </button>
           </div>
         </div>
