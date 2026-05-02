@@ -4,6 +4,7 @@ import { useAppStore } from '@/stores/appStore';
 import type {
   Member, Hospital, Visit, Medication, MedicalExpense,
   HealthCheckup, DashboardSummary, OcrReceiptResult, OcrCheckupResult,
+  OrganizationUser,
 } from '@/types/app';
 
 // ───────── Members ─────────
@@ -45,6 +46,27 @@ export function useCreateMember() {
       return result;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['members'] }),
+  });
+}
+
+// ───────── Organization Users ─────────
+export function useOrganizationUsers() {
+  const supabase = createClient();
+  const { currentOrganization } = useAppStore();
+  const orgId = currentOrganization?.id;
+
+  return useQuery({
+    queryKey: ['org-users', orgId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('m_organization_users')
+        .select('*, user:m_users(id, display_name, picture_url)')
+        .eq('organization_id', orgId!);
+      if (error) throw error;
+      return data as OrganizationUser[];
+    },
+    enabled: !!orgId,
+    staleTime: 1000 * 60 * 5,
   });
 }
 
