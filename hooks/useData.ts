@@ -49,6 +49,35 @@ export function useCreateMember() {
   });
 }
 
+export function useUpdateMember() {
+  const supabase = createClient();
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, ...data }: Partial<Member> & { id: string }) => {
+      const { error } = await supabase.from('m_members').update(data).eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['members'] }),
+  });
+}
+
+export function useDeleteMember() {
+  const supabase = createClient();
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from('m_members')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['members'] }),
+  });
+}
+
 // ───────── Organization Users ─────────
 export function useOrganizationUsers() {
   const supabase = createClient();

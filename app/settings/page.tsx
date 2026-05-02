@@ -2,22 +2,31 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useMembers, useCreateMember, useOrganizationUsers } from '@/hooks/useData';
+import { useMembers, useCreateMember, useUpdateMember, useDeleteMember, useOrganizationUsers } from '@/hooks/useData';
 import { useAppStore } from '@/stores/appStore';
 import BottomNav from '@/components/BottomNav';
 import { createClient } from '@/lib/supabase';
+import type { Member } from '@/types/app';
 
 type AddMode = 'app-user' | 'manual';
 
 export default function SettingsPage() {
   const router = useRouter();
-  const { user, currentOrganization, logout } = useAppStore();
+  const { user, currentOrganization, logout, selectedMemberId, setSelectedMember } = useAppStore();
   const { data: members, isLoading } = useMembers();
   const { data: orgUsers = [] } = useOrganizationUsers();
   const createMember = useCreateMember();
+  const updateMember = useUpdateMember();
+  const deleteMember = useDeleteMember();
   const supabase = createClient();
 
   const [showAddMember, setShowAddMember] = useState(false);
+  const [editingMember, setEditingMember] = useState<Member | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editRelation, setEditRelation] = useState('');
+  const [editIsSelf, setEditIsSelf] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
   const [addMode, setAddMode] = useState<AddMode>('app-user');
   const [selectedOrgUserId, setSelectedOrgUserId] = useState('');
   const [memberName, setMemberName] = useState('');
@@ -81,6 +90,40 @@ export default function SettingsPage() {
     router.push('/');
   };
 
+  const openEdit = (m: Member) => {
+    setEditingMember(m);
+    setEditName(m.name);
+    setEditRelation(m.relationship ?? '');
+    setEditIsSelf(m.is_self);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingMember || !editName.trim()) return;
+    setEditSaving(true);
+    try {
+      await updateMember.mutateAsync({
+        id: editingMember.id,
+        name: editName.trim(),
+        relationship: editRelation.trim() || undefined,
+        is_self: editIsSelf,
+      });
+      if (selectedMemberId === editingMember.id) {
+        setSelectedMember({ id: editingMember.id, name: editName.trim() });
+      }
+      setEditingMember(null);
+    } catch { /* noop */ }
+    setEditSaving(false);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteId) return;
+    try {
+      await deleteMember.mutateAsync(deleteId);
+      if (selectedMemberId === deleteId) setSelectedMember(null);
+    } catch { /* noop */ }
+    setDeleteId(null);
+  };
+
   const inputCls = 'w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white';
 
   const selectedUser = orgUsers.find((ou) => ou.user_id === selectedOrgUserId)?.user;
@@ -129,16 +172,36 @@ export default function SettingsPage() {
               {members?.map((m) => (
                 <div key={m.id} className="flex items-center gap-3 px-4 py-3">
                   <div
-                    className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold"
+                    className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0"
                     style={{ backgroundColor: m.avatar_color ?? '#6366f1' }}
                   >
                     {m.name.charAt(0)}
                   </div>
-                  <div>
+                  <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-900">{m.name}</p>
                     <p className="text-xs text-gray-400">
                       {m.is_self ? '本人' : (m.relationship ?? '家族')}
                     </p>
+                  </div>
+                  <div className="flex flex-col gap-1 flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => openEdit(m)}
+                      className="text-xs font-medium text-indigo-600 py-1 px-2"
+                    >
+                      編集
+                    </button>
+                    {m.is_self ? (
+                      <span className="text-[10px] text-gray-300 text-center">本人は削除不可</span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setDeleteId(m.id)}
+                        className="text-xs font-medium text-red-500 py-1 px-2"
+                      >
+                        削除
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -332,6 +395,83 @@ export default function SettingsPage() {
                 {saving ? '追加中...' : '追加する'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* メンバー編集 */}
+      {editingMember && (
+        <div className="fixed inset-0 z-[60] flex items-end bg-black/50">
+          <div className="w-full bg-white rounded-t-3xl p-6 max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-base font-bold text-gray-900">メンバーを編集</h2>
+              <button type="button" onClick={() => setEditingMember(null)} className="text-gray-400 text-lg">✕</button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium text-gray-600 mb-1 block">名前 *</label>
+                <input
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className={inputCls}
+                  placeholder="名前"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-600 mb-1 block">続柄（任意）</label>
+                <input
+                  type="text"
+                  value={editRelation}
+                  onChange={(e) => setEditRelation(e.target.value)}
+                  className={inputCls}
+                  placeholder="例: 妻・父・子ども"
+                />
+              </div>
+              <label className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  checked={editIsSelf}
+                  onChange={(e) => setEditIsSelf(e.target.checked)}
+                  className="w-5 h-5 accent-indigo-600"
+                />
+                <span className="text-sm text-gray-700">本人（自分自身）</span>
+              </label>
+              <button
+                type="button"
+                onClick={handleSaveEdit}
+                disabled={!editName.trim() || editSaving}
+                className="w-full bg-indigo-600 disabled:bg-indigo-300 text-white font-bold py-4 rounded-xl text-sm"
+              >
+                {editSaving ? '保存中...' : '保存する'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* メンバー削除確認 */}
+      {deleteId && (
+        <div className="fixed inset-0 z-[60] flex items-end bg-black/50">
+          <div className="w-full bg-white rounded-t-3xl p-6 space-y-3">
+            <p className="text-center font-semibold text-gray-900">このメンバーを削除しますか？</p>
+            <p className="text-center text-xs text-gray-500">
+              通院・お薬などの記録は残りますが、このメンバーは一覧から消えます。
+            </p>
+            <button
+              type="button"
+              onClick={handleConfirmDelete}
+              className="w-full bg-red-500 text-white py-3.5 rounded-xl font-bold text-sm"
+            >
+              削除する
+            </button>
+            <button
+              type="button"
+              onClick={() => setDeleteId(null)}
+              className="w-full border border-gray-200 text-gray-600 py-3.5 rounded-xl text-sm"
+            >
+              キャンセル
+            </button>
           </div>
         </div>
       )}
