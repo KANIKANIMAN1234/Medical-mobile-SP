@@ -115,7 +115,7 @@ export default function SettingsPage() {
 
       {/* メンバー追加フォーム */}
       {showAddMember && (
-        <div className="fixed inset-0 z-50 flex items-end bg-black/50">
+        <div className="fixed inset-0 z-[60] flex items-end bg-black/50">
           <div className="w-full bg-white rounded-t-3xl p-6 space-y-3">
             <div className="flex items-center justify-between mb-2">
               <h2 className="text-base font-bold text-gray-900">メンバーを追加</h2>

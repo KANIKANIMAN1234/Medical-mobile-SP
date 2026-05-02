@@ -86,7 +86,7 @@ export default function VisitDetailPage() {
 
       {/* 削除確認 */}
       {showDelete && (
-        <div className="fixed inset-0 z-50 flex items-end bg-black/50">
+        <div className="fixed inset-0 z-[60] flex items-end bg-black/50">
           <div className="w-full bg-white rounded-t-3xl p-6 space-y-3">
             <p className="text-center font-semibold text-gray-900">この記録を削除しますか？</p>
             <p className="text-center text-xs text-gray-500">この操作は取り消せません</p>

@@ -189,7 +189,7 @@ export default function MedicationsPage() {
 
       {/* 追加フォーム (ボトムシート) */}
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-end bg-black/50">
+        <div className="fixed inset-0 z-[60] flex items-end bg-black/50">
           <div className="w-full bg-white rounded-t-3xl p-6 max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-base font-bold text-gray-900">お薬を追加</h2>
@@ -307,7 +307,7 @@ export default function MedicationsPage() {
 
       {/* 削除確認 */}
       {deletingId && (
-        <div className="fixed inset-0 z-50 flex items-end bg-black/50">
+        <div className="fixed inset-0 z-[60] flex items-end bg-black/50">
           <div className="w-full bg-white rounded-t-3xl p-6 space-y-3">
             <p className="text-center font-semibold text-gray-900">この薬を削除しますか？</p>
             <button onClick={async () => { await deleteMed.mutateAsync(deletingId); setDeletingId(null); }}
