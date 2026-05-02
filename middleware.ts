@@ -10,7 +10,10 @@ export async function middleware(request: NextRequest) {
   if (
     PUBLIC_PATHS.some((p) => pathname === p) ||
     pathname.startsWith('/api/') ||
-    pathname.startsWith('/invite/')
+    pathname.startsWith('/invite/') ||
+    pathname === '/manifest.json' ||
+    pathname === '/favicon.png' ||
+    pathname === '/apple-touch-icon.png'
   ) {
     return NextResponse.next();
   }
@@ -46,5 +49,7 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|manifest.json|favicon.png|apple-touch-icon.png).*)',
+  ],
 };

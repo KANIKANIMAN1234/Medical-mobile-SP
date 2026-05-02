@@ -67,6 +67,7 @@ export default function NewVisitPage() {
       router.push('/visits');
     } catch {
       setError('保存に失敗しました。');
+    } finally {
       setSaving(false);
     }
   };

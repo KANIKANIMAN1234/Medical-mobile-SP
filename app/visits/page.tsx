@@ -6,16 +6,36 @@ import BottomNav from '@/components/BottomNav';
 import { format, parseISO } from 'date-fns';
 import { ja } from 'date-fns/locale';
 
+/** DBの visit_date は YYYY-MM-DD。YYYY-MM に正規化してからグループ化 */
+function toYmd(d: string | null | undefined): string | null {
+  if (!d) return null;
+  const s = d.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  return s;
+}
+
 function groupByMonth(visits: ReturnType<typeof useVisits>['data']) {
   if (!visits) return [];
   const groups: { key: string; label: string; items: typeof visits }[] = [];
   for (const v of visits) {
-    const key = v.visit_date.slice(0, 7);
-    const label = format(parseISO(v.visit_date + '-01'), 'yyyy年M月', { locale: ja });
+    const ymd = toYmd(v.visit_date);
+    if (!ymd) continue;
+    const key = ymd.slice(0, 7);
+    const d = parseISO(ymd);
+    if (Number.isNaN(d.getTime())) continue;
+    const label = format(d, 'yyyy年M月', { locale: ja });
     const g = groups.find((g) => g.key === key);
     if (g) { g.items.push(v); } else { groups.push({ key, label, items: [v] }); }
   }
   return groups;
+}
+
+function formatVisitDay(visitDate: string | null | undefined): string {
+  const ymd = toYmd(visitDate);
+  if (!ymd) return '—';
+  const d = parseISO(ymd);
+  if (Number.isNaN(d.getTime())) return '—';
+  return format(d, 'M/d（E）', { locale: ja });
 }
 
 export default function VisitsPage() {
@@ -60,7 +80,7 @@ export default function VisitsPage() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
                             <span className="text-xs text-gray-400">
-                              {format(parseISO(v.visit_date), 'M/d（E）', { locale: ja })}
+                              {formatVisitDay(v.visit_date)}
                             </span>
                             {v.member && (
                               <span className="text-xs bg-indigo-50 text-indigo-600 rounded-full px-2 py-0.5">

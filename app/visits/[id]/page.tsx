@@ -7,6 +7,21 @@ import BottomNav from '@/components/BottomNav';
 import { format, parseISO } from 'date-fns';
 import { ja } from 'date-fns/locale';
 
+function toYmd(d: string | null | undefined): string | null {
+  if (!d) return null;
+  const s = d.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  return s;
+}
+
+function formatJaDateLong(dStr: string | null | undefined): string {
+  const ymd = toYmd(dStr);
+  if (!ymd) return '—';
+  const d = parseISO(ymd);
+  if (Number.isNaN(d.getTime())) return '—';
+  return format(d, 'yyyy年M月d日（E）', { locale: ja });
+}
+
 export default function VisitDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -43,7 +58,7 @@ export default function VisitDetailPage() {
             <span className="text-2xl">📅</span>
             <div>
               <p className="text-base font-bold text-gray-900">
-                {format(parseISO(visit.visit_date), 'yyyy年M月d日（E）', { locale: ja })}
+                {formatJaDateLong(visit.visit_date)}
               </p>
               {visit.member && (
                 <p className="text-xs text-gray-500">{visit.member.name}</p>
@@ -77,7 +92,7 @@ export default function VisitDetailPage() {
             <div>
               <p className="text-xs text-indigo-500 font-medium">次回予約</p>
               <p className="text-sm font-bold text-indigo-700">
-                {format(parseISO(visit.next_visit_date), 'yyyy年M月d日（E）', { locale: ja })}
+                {formatJaDateLong(visit.next_visit_date)}
               </p>
             </div>
           </div>
