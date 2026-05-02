@@ -158,7 +158,7 @@ export default function NewExpensePage() {
           {error && <p className="text-sm text-red-600 text-center">{error}</p>}
         </div>
 
-        <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden"
+        <input ref={cameraInputRef} type="file" accept="image/*" className="hidden"
           onChange={(e) => e.target.files?.[0] && handleImageSelect(e.target.files[0])} />
         <input ref={fileInputRef} type="file" accept="image/*" className="hidden"
           onChange={(e) => e.target.files?.[0] && handleImageSelect(e.target.files[0])} />

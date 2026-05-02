@@ -241,7 +241,7 @@ export default function NewCheckupPage() {
         )}
       </div>
 
-      <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" multiple className="hidden"
+      <input ref={cameraInputRef} type="file" accept="image/*" multiple className="hidden"
         onChange={(e) => Array.from(e.target.files ?? []).forEach(handleImageAdd)} />
 
       <BottomNav />
